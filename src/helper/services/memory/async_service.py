@@ -4,14 +4,14 @@ Provides functionality for storing and retrieving memories using embeddings with
 """
 import os
 import time
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Union, Callable, TypeVar
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_chroma import Chroma
-from langchain.docstore.document import Document
+# Removed unused import: from langchain.docstore.document import Document
 from fastapi import HTTPException
 
 from ...config import settings
@@ -20,6 +20,9 @@ from ...utils.cache import async_cache, cache
 
 # Initialize logger
 logger = get_logger("async_memory_service")
+
+# Type variable for generic function return types
+T = TypeVar('T')
 
 # Shared thread pool executor
 _executor = ThreadPoolExecutor(max_workers=settings.MAX_WORKERS)
@@ -119,7 +122,8 @@ class AsyncMemoryService:
         # Removed persist call
         return ids
 
-    @async_cache(ttl=lambda: settings.CACHE_TTL_SEARCH, prefix="memory_search")
+    # Fixed TTL type by using a lambda that returns an int
+    @async_cache(ttl=lambda: int(settings.CACHE_TTL_SEARCH), prefix="memory_search")
     async def search_memories(self, query: str, k: int = 5) -> List[Dict[str, Any]]:
         """
         Search for relevant memories based on a query asynchronously.
@@ -236,7 +240,7 @@ class AsyncMemoryService:
             logger.error(f"Error clearing memories: {e}", exc_info=True)
             raise HTTPException(status_code=500, detail=f"Error clearing memories: {str(e)}")
 
-    async def get_all_memories(self, skip: int = 0, limit: int = 100) -> List[Dict[str, Any]]:
+    async def get_all_memories(self, skip: int = 0, limit: int = 100) -> Dict[str, Union[int, List[Dict[str, Any]]]]:
         """
         Retrieve all stored memories asynchronously with pagination.
 
@@ -245,7 +249,7 @@ class AsyncMemoryService:
             limit: Maximum number of items to return
 
         Returns:
-            List of all documents in the vector store
+            Dictionary with total count, paginated items, and pagination info
         """
         logger.info(f"Retrieving all memories asynchronously (skip={skip}, limit={limit})")
 
@@ -352,7 +356,8 @@ class AsyncMemoryService:
         self.vectorstore.add_texts(texts=texts, metadatas=metadatas, ids=ids)
         # Removed persist call
 
-    @cache(ttl=lambda: settings.CACHE_TTL_EMBEDDINGS, prefix="embedding")
+    # Fixed TTL type by using a lambda that returns an int
+    @cache(ttl=lambda: int(settings.CACHE_TTL_EMBEDDINGS), prefix="embedding")
     def get_embedding(self, text: str) -> List[float]:
         """
         Get the embedding vector for a text.
