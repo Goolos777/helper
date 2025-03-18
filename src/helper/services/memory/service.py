@@ -92,8 +92,7 @@ class MemoryService:
                 metadatas=metadatas
             )
 
-            # Persist the vector store
-            self.vectorstore.persist()
+            # Removed persist call as it's not needed in the current Chroma implementation
 
             logger.info(f"Memory added successfully with {len(ids)} chunks in {time.time() - start_time:.2f} seconds. IDs: {ids}")
             return ids
@@ -154,7 +153,7 @@ class MemoryService:
                 raise HTTPException(status_code=404, detail=f"Memory with ID {memory_id} not found")
 
             self.vectorstore.delete([memory_id])
-            self.vectorstore.persist()
+            # Removed persist call
             logger.info(f"Memory {memory_id} deleted successfully")
         except Exception as e:
             if isinstance(e, HTTPException):
@@ -176,7 +175,7 @@ class MemoryService:
             else:
                 logger.info("No memories to delete")
 
-            self.vectorstore.persist()
+            # Removed persist call
             logger.info("All memories cleared successfully")
         except Exception as e:
             logger.error(f"Error clearing memories: {e}", exc_info=True)
@@ -256,7 +255,7 @@ class MemoryService:
                 ids=new_ids
             )
 
-            self.vectorstore.persist()
+            # Removed persist call
             logger.info(f"Memory {memory_id} updated successfully with {len(chunks)} chunks")
         except Exception as e:
             if isinstance(e, HTTPException):

@@ -116,7 +116,7 @@ class AsyncMemoryService:
     def _add_texts_to_vectorstore(self, texts: List[str], metadatas: Optional[List[Dict[str, Any]]]) -> List[str]:
         """Helper method to add texts to vectorstore in a thread."""
         ids = self.vectorstore.add_texts(texts=texts, metadatas=metadatas)
-        self.vectorstore.persist()
+        # Removed persist call
         return ids
 
     @async_cache(ttl=lambda: settings.CACHE_TTL_SEARCH, prefix="memory_search")
@@ -202,7 +202,7 @@ class AsyncMemoryService:
     def _delete_from_vectorstore(self, ids: List[str]) -> None:
         """Helper method to delete from vectorstore in a thread."""
         self.vectorstore.delete(ids)
-        self.vectorstore.persist()
+        # Removed persist call
 
     async def clear_all_memories(self) -> None:
         """Delete all memories in the vector store asynchronously."""
@@ -350,7 +350,7 @@ class AsyncMemoryService:
     def _add_texts_with_ids(self, texts: List[str], metadatas: Optional[List[Dict]], ids: List[str]) -> None:
         """Helper method to add texts with specific IDs in a thread."""
         self.vectorstore.add_texts(texts=texts, metadatas=metadatas, ids=ids)
-        self.vectorstore.persist()
+        # Removed persist call
 
     @cache(ttl=lambda: settings.CACHE_TTL_EMBEDDINGS, prefix="embedding")
     def get_embedding(self, text: str) -> List[float]:
