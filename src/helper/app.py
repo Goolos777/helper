@@ -1,22 +1,27 @@
 """
 Main entry point for the application.
 """
-import sys
 import os
+import sys
 from pathlib import Path
 
-# Добавляем директорию src в sys.path для корректных импортов
+# Add the project root to sys.path for correct imports
 current_file = Path(__file__).resolve()
-project_root = current_file.parent.parent.parent  # переходим на уровень выше src
+project_root = current_file.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 import uvicorn
 from fastapi import FastAPI
+from src.helper.config import settings
 
 # Initialize application
-app = FastAPI(title="Helper App with Memory", version="0.1.0")
+app = FastAPI(
+    title=settings.APP_TITLE,
+    version=settings.APP_VERSION,
+    debug=settings.DEBUG
+)
 
-# Используем абсолютный импорт от корня проекта
+# Import router with absolute import from project root
 from src.helper.api.routes import router as memory_router
 
 # Register routers
@@ -31,9 +36,9 @@ def main():
     """Entry point for launching via poetry."""
     uvicorn.run(
         "src.helper.app:app",
-        host="0.0.0.0",
-        port=8000,
-        reload=True,
+        host=settings.HOST,
+        port=settings.PORT,
+        reload=settings.DEBUG,
     )
 
 if __name__ == "__main__":

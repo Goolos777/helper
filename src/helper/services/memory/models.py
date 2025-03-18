@@ -7,11 +7,22 @@ class MemoryInput(BaseModel):
     content: str = Field(..., description="The text content to remember")
     metadata: Optional[Dict[str, Any]] = Field(default=None, description="Optional metadata for the memory")
 
+class MemoryUpdateInput(BaseModel):
+    """Input model for updating an existing memory."""
+    content: str = Field(..., description="The new text content")
+    metadata: Optional[Dict[str, Any]] = Field(default=None, description="Optional metadata for the memory")
+
 class Memory(BaseModel):
     """Model representing a retrieved memory."""
     content: str = Field(..., description="The text content of the memory")
     metadata: Optional[Dict[str, Any]] = Field(default=None, description="Metadata associated with the memory")
     relevance: float = Field(..., description="Relevance score of the memory to the query")
+
+class MemoryItem(BaseModel):
+    """Model representing a stored memory."""
+    id: str = Field(..., description="Unique identifier for the memory")
+    content: str = Field(..., description="The text content of the memory")
+    metadata: Optional[Dict[str, Any]] = Field(default=None, description="Metadata associated with the memory")
 
 class MemorySearchResults(BaseModel):
     """Model representing search results."""
