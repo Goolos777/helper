@@ -87,7 +87,7 @@ def _get_from_cache(key: str) -> Optional[Any]:
                 return json.loads(data)
             logger.debug(f"Cache miss (Redis): {key}")
         except Exception as e:
-            logger.warning(f"Redis error when retrieving key {key}: {e}")
+            logger.warning(f"Redis error when retrieving key {key}: {e}, falling back to memory cache")
 
     # Fallback to memory cache
     if key in _memory_cache:
@@ -125,7 +125,7 @@ def _set_in_cache(key: str, value: Any, ttl: int = 0) -> None:
             redis_client.set(key, serialized, ex=ttl if ttl > 0 else None)
             logger.debug(f"Stored in Redis cache: {key}, TTL: {ttl}s")
         except Exception as e:
-            logger.warning(f"Redis error when storing key {key}: {e}")
+            logger.warning(f"Redis error when storing key {key}: {e}, still using memory cache")
 
     # Always store in memory cache as well for fastest retrieval
     expiry = time.time() + ttl if ttl > 0 else 0
@@ -154,12 +154,27 @@ def _delete_from_cache(key: str) -> None:
         logger.debug(f"Deleted from memory cache: {key}")
 
 
-def cache(ttl: int = 300, prefix: Optional[str] = None, skip_args: int = 0):
+def _resolve_ttl(ttl: Union[int, Callable[[], int]]) -> int:
+    """
+    Resolve TTL value, supporting both direct integers and callables.
+
+    Args:
+        ttl: Integer TTL value or callable that returns TTL
+
+    Returns:
+        Resolved TTL value as integer
+    """
+    if callable(ttl):
+        return ttl()
+    return ttl
+
+
+def cache(ttl: Union[int, Callable[[], int]] = 300, prefix: Optional[str] = None, skip_args: int = 0):
     """
     Cache decorator for regular functions.
 
     Args:
-        ttl: Time to live in seconds (default: 5 minutes)
+        ttl: Time to live in seconds or callable returning TTL (default: 5 minutes)
         prefix: Custom prefix for cache keys (default: function name)
         skip_args: Number of initial args to skip when creating cache key (e.g., 'self')
 
@@ -190,8 +205,9 @@ def cache(ttl: int = 300, prefix: Optional[str] = None, skip_args: int = 0):
             result = func(*args, **kwargs)
             duration = time.time() - start_time
 
-            # Store in cache
-            _set_in_cache(key, result, ttl)
+            # Store in cache with resolved TTL
+            actual_ttl = _resolve_ttl(ttl)
+            _set_in_cache(key, result, actual_ttl)
             logger.debug(f"Cached result for {func.__name__} (took {duration:.2f}s)")
 
             return result
@@ -209,12 +225,12 @@ def cache(ttl: int = 300, prefix: Optional[str] = None, skip_args: int = 0):
     return decorator
 
 
-def async_cache(ttl: int = 300, prefix: Optional[str] = None, skip_args: int = 0):
+def async_cache(ttl: Union[int, Callable[[], int]] = 300, prefix: Optional[str] = None, skip_args: int = 0):
     """
     Cache decorator for async functions.
 
     Args:
-        ttl: Time to live in seconds (default: 5 minutes)
+        ttl: Time to live in seconds or callable returning TTL (default: 5 minutes)
         prefix: Custom prefix for cache keys (default: function name)
         skip_args: Number of initial args to skip when creating cache key (e.g., 'self')
 
@@ -245,8 +261,9 @@ def async_cache(ttl: int = 300, prefix: Optional[str] = None, skip_args: int = 0
             result = await func(*args, **kwargs)
             duration = time.time() - start_time
 
-            # Store in cache
-            _set_in_cache(key, result, ttl)
+            # Store in cache with resolved TTL
+            actual_ttl = _resolve_ttl(ttl)
+            _set_in_cache(key, result, actual_ttl)
             logger.debug(f"Cached result for {func.__name__} (took {duration:.2f}s)")
 
             return result

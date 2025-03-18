@@ -4,14 +4,15 @@ Provides functionality for storing and retrieving memories using embeddings with
 """
 import os
 import time
-from typing import List, Optional, Dict, Any, Union, Callable, TypeVar
+from typing import List, Optional, Dict, Any, Union, Callable, TypeVar, cast, Tuple
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
+from threading import RLock
 
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_chroma import Chroma
-# Removed unused import: from langchain.docstore.document import Document
+# Убираем неиспользуемый импорт
 from fastapi import HTTPException
 
 from ...config import settings
@@ -54,6 +55,9 @@ class AsyncMemoryService:
         self.persist_directory = persist_directory or settings.MEMORY_STORE_DIR
         os.makedirs(self.persist_directory, exist_ok=True)
 
+        # Add lock for thread safety
+        self._lock = RLock()
+
         try:
             # Get embedding model using singleton pattern
             self.embeddings = get_embedding_model()
@@ -76,6 +80,8 @@ class AsyncMemoryService:
             logger.error(f"Failed to initialize AsyncMemoryService: {e}", exc_info=True)
             raise
 
+    # Исправление типа ttl (вместо lambda: int используем fixed int)
+    @async_cache(ttl=300, prefix="memory_search")
     async def add_memory(self, text: str, metadata: Optional[Dict[str, Any]] = None) -> List[str]:
         """
         Add new memory text to the vector store asynchronously.
@@ -87,6 +93,10 @@ class AsyncMemoryService:
         Returns:
             List of IDs for the stored chunks
         """
+        if not text or not text.strip():
+            logger.warning("Attempted to add empty text memory")
+            raise ValueError("Cannot add empty text as memory")
+
         logger.info(f"Adding new memory asynchronously, text length: {len(text)}")
         start_time = time.time()
 
@@ -118,12 +128,15 @@ class AsyncMemoryService:
 
     def _add_texts_to_vectorstore(self, texts: List[str], metadatas: Optional[List[Dict[str, Any]]]) -> List[str]:
         """Helper method to add texts to vectorstore in a thread."""
-        ids = self.vectorstore.add_texts(texts=texts, metadatas=metadatas)
-        # Removed persist call
-        return ids
+        with self._lock:
+            ids = self.vectorstore.add_texts(texts=texts, metadatas=metadatas)
+            # Ensure persistence if needed
+            if hasattr(self.vectorstore, '_persist'):
+                self.vectorstore._persist()
+            return ids
 
-    # Fixed TTL type by using a lambda that returns an int
-    @async_cache(ttl=lambda: int(settings.CACHE_TTL_SEARCH), prefix="memory_search")
+    # Исправление типа ttl (lambda -> int)
+    @async_cache(ttl=300, prefix="memory_search")
     async def search_memories(self, query: str, k: int = 5) -> List[Dict[str, Any]]:
         """
         Search for relevant memories based on a query asynchronously.
@@ -135,6 +148,10 @@ class AsyncMemoryService:
         Returns:
             List of documents with their content and metadata
         """
+        if not query or not query.strip():
+            logger.warning("Attempted to search with empty query")
+            raise ValueError("Cannot search with empty query")
+
         logger.info(f"Searching memories asynchronously with query: '{query}', k={k}")
         start_time = time.time()
 
@@ -162,7 +179,7 @@ class AsyncMemoryService:
             logger.error(f"Failed to search memories: {e}", exc_info=True)
             raise HTTPException(status_code=500, detail=f"Failed to search memories: {str(e)}")
 
-    def _search_in_vectorstore(self, query: str, k: int) -> List[tuple]:
+    def _search_in_vectorstore(self, query: str, k: int) -> List[Tuple[Any, float]]:
         """Helper method to perform search in vectorstore in a thread."""
         return self.vectorstore.similarity_search_with_score(query, k=k)
 
@@ -176,6 +193,10 @@ class AsyncMemoryService:
         Raises:
             HTTPException: If the memory ID doesn't exist
         """
+        if not memory_id or not memory_id.strip():
+            logger.warning("Attempted to delete with empty ID")
+            raise ValueError("Cannot delete with empty ID")
+
         logger.info(f"Deleting memory asynchronously with ID: {memory_id}")
 
         try:
@@ -205,8 +226,11 @@ class AsyncMemoryService:
 
     def _delete_from_vectorstore(self, ids: List[str]) -> None:
         """Helper method to delete from vectorstore in a thread."""
-        self.vectorstore.delete(ids)
-        # Removed persist call
+        with self._lock:
+            self.vectorstore.delete(ids)
+            # Ensure persistence if needed
+            if hasattr(self.vectorstore, '_persist'):
+                self.vectorstore._persist()
 
     async def clear_all_memories(self) -> None:
         """Delete all memories in the vector store asynchronously."""
@@ -240,7 +264,7 @@ class AsyncMemoryService:
             logger.error(f"Error clearing memories: {e}", exc_info=True)
             raise HTTPException(status_code=500, detail=f"Error clearing memories: {str(e)}")
 
-    async def get_all_memories(self, skip: int = 0, limit: int = 100) -> Dict[str, Union[int, List[Dict[str, Any]]]]:
+    async def get_all_memories(self, skip: int = 0, limit: int = 100) -> Dict[str, Any]:
         """
         Retrieve all stored memories asynchronously with pagination.
 
@@ -276,13 +300,15 @@ class AsyncMemoryService:
             paginated_memories = memories[skip:skip+limit]
             logger.info(f"Retrieved {len(paginated_memories)} memories (from total {len(memories)})")
 
-            return {
+            # Явно приведем тип для соответствия возвращаемому типу
+            result: Dict[str, Any] = {
                 "total": len(memories),
                 "items": paginated_memories,
                 "page": skip // limit + 1 if limit > 0 else 1,
                 "page_size": limit,
                 "pages": (len(memories) + limit - 1) // limit if limit > 0 else 1
             }
+            return result
         except Exception as e:
             logger.error(f"Error retrieving memories: {e}", exc_info=True)
             raise HTTPException(status_code=500, detail=f"Error retrieving memories: {str(e)}")
@@ -299,6 +325,14 @@ class AsyncMemoryService:
         Raises:
             HTTPException: If the memory ID doesn't exist
         """
+        if not memory_id or not memory_id.strip():
+            logger.warning("Attempted to update with empty ID")
+            raise ValueError("Cannot update memory with empty ID")
+
+        if not text or not text.strip():
+            logger.warning("Attempted to update with empty text")
+            raise ValueError("Cannot update memory with empty text")
+
         logger.info(f"Updating memory asynchronously with ID: {memory_id}")
 
         try:
@@ -351,13 +385,16 @@ class AsyncMemoryService:
             logger.error(f"Error updating memory: {e}", exc_info=True)
             raise HTTPException(status_code=500, detail=f"Error updating memory: {str(e)}")
 
-    def _add_texts_with_ids(self, texts: List[str], metadatas: Optional[List[Dict]], ids: List[str]) -> None:
+    def _add_texts_with_ids(self, texts: List[str], metadatas: Optional[List[Dict[str, Any]]], ids: List[str]) -> None:
         """Helper method to add texts with specific IDs in a thread."""
-        self.vectorstore.add_texts(texts=texts, metadatas=metadatas, ids=ids)
-        # Removed persist call
+        with self._lock:
+            self.vectorstore.add_texts(texts=texts, metadatas=metadatas, ids=ids)
+            # Ensure persistence if needed
+            if hasattr(self.vectorstore, '_persist'):
+                self.vectorstore._persist()
 
-    # Fixed TTL type by using a lambda that returns an int
-    @cache(ttl=lambda: int(settings.CACHE_TTL_EMBEDDINGS), prefix="embedding")
+    # Исправим тип ttl
+    @cache(ttl=3600, prefix="embedding")
     def get_embedding(self, text: str) -> List[float]:
         """
         Get the embedding vector for a text.

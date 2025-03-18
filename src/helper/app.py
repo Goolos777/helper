@@ -14,8 +14,11 @@ import uvicorn
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.responses import JSONResponse
-from src.helper.config import settings
-from src.helper.utils.logger import get_logger
+
+# Используем относительные импорты вместо абсолютных
+from .config import settings
+from .utils.logger import get_logger
+from .api.routes import router as memory_router
 
 # Initialize logger
 logger = get_logger("app")
@@ -35,9 +38,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# Import router with absolute import from project root
-from src.helper.api.routes import router as memory_router
 
 # Register routers
 app.include_router(memory_router, prefix="/api")
@@ -75,7 +75,7 @@ def main():
     """Entry point for launching via poetry."""
     try:
         uvicorn.run(
-            "src.helper.app:app",
+            "helper.app:app",
             host=settings.HOST,
             port=settings.PORT,
             reload=settings.DEBUG,
